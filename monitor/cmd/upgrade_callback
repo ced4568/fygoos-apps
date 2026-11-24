@@ -1,0 +1,5 @@
+#!/bin/bash
+# Upgrades replace the app directory, which removes docker/.env. Re-render it from saved settings.
+. "$(dirname "$0")/common"
+render_env
+exit 0

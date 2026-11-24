@@ -1,0 +1,7 @@
+#!/bin/bash
+# Pre-install checks.
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker is not available. Enable Docker in Fygo OS before installing Fygo Monitor." > "$TRIM_TEMP_LOGFILE"
+    exit 1
+fi
+exit 0

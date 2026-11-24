@@ -1,0 +1,23 @@
+#!/bin/bash
+# Fygo OS starts and stops the Compose project declared in config/resource.
+# This script only reports status. Grafana is the user-facing service, so it decides "running".
+
+CONTAINER_NAME="fygo-monitor-grafana"
+
+is_running() {
+    docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q true
+}
+
+case "$1" in
+    start|stop)
+        exit 0
+        ;;
+    status)
+        is_running && exit 0
+        exit 3
+        ;;
+    *)
+        echo "Unknown command: $1" > "$TRIM_TEMP_LOGFILE"
+        exit 1
+        ;;
+esac

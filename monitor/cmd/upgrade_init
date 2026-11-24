@@ -1,0 +1,3 @@
+#!/bin/bash
+# Settings and data live outside the app directory, so nothing to back up here.
+exit 0

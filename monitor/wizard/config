@@ -1,0 +1,37 @@
+[
+  {
+    "stepTitle": "Settings",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "Leave the password empty to keep the current one. Restart the app after saving."
+      },
+      {
+        "type": "password",
+        "field": "wizard_grafana_password",
+        "label": "New Grafana admin password (optional)",
+        "rules": [
+          { "min": 8, "message": "Use at least 8 characters" }
+        ]
+      },
+      {
+        "type": "select",
+        "field": "wizard_retention_days",
+        "label": "Keep metrics for",
+        "initValue": "15",
+        "options": [
+          { "label": "7 days", "value": "7" },
+          { "label": "15 days", "value": "15" },
+          { "label": "30 days", "value": "30" },
+          { "label": "90 days", "value": "90" }
+        ]
+      },
+      {
+        "type": "switch",
+        "field": "wizard_container_metrics",
+        "label": "Monitor Docker containers (runs cAdvisor with elevated privileges)",
+        "initValue": false
+      }
+    ]
+  }
+]

@@ -1,0 +1,97 @@
+#!/bin/bash
+# Shared helpers, sourced by the lifecycle scripts.
+# Settings flow:
+#   wizard values (env vars) -> $TRIM_PKGETC/settings.env (persists across upgrades)
+#   settings.env -> $TRIM_APPDEST/docker/.env (Compose interpolation)
+#                -> $TRIM_PKGVAR/grafana.env (Grafana admin credentials)
+
+SETTINGS_FILE="${TRIM_PKGETC}/settings.env"
+COMPOSE_ENV="${TRIM_APPDEST}/docker/.env"
+GRAFANA_ENV="${TRIM_PKGVAR}/grafana.env"
+
+fail() {
+    echo "$1" > "$TRIM_TEMP_LOGFILE"
+    exit 1
+}
+
+# Validate and persist wizard values. Only overwrites keys the wizard actually provided.
+save_settings() {
+    mkdir -p "$TRIM_PKGETC" || fail "Cannot create the configuration directory."
+    [ -f "$SETTINGS_FILE" ] && . "$SETTINGS_FILE"
+
+    if [ -n "$wizard_retention_days" ]; then
+        case "$wizard_retention_days" in
+            ''|*[!0-9]*) fail "Retention must be a whole number of days." ;;
+        esac
+        if [ "$wizard_retention_days" -lt 1 ] || [ "$wizard_retention_days" -gt 365 ]; then
+            fail "Retention must be between 1 and 365 days."
+        fi
+        RETENTION_DAYS="$wizard_retention_days"
+    fi
+
+    if [ -n "$wizard_container_metrics" ]; then
+        case "$wizard_container_metrics" in
+            true|false) CONTAINER_METRICS="$wizard_container_metrics" ;;
+            *) fail "Invalid value for container metrics." ;;
+        esac
+    fi
+
+    if [ -n "$wizard_grafana_password" ]; then
+        if [ "${#wizard_grafana_password}" -lt 8 ]; then
+            fail "The Grafana password must be at least 8 characters."
+        fi
+        case "$wizard_grafana_password" in
+            *"'"*) fail "The Grafana password cannot contain a single quote (')." ;;
+        esac
+        PASSWORD_CHANGED=true
+        GRAFANA_PASSWORD="$wizard_grafana_password"
+    fi
+
+    RETENTION_DAYS="${RETENTION_DAYS:-15}"
+    CONTAINER_METRICS="${CONTAINER_METRICS:-false}"
+    [ -n "$GRAFANA_PASSWORD" ] || fail "A Grafana admin password is required."
+
+    umask 077
+    {
+        printf 'RETENTION_DAYS=%q\n' "$RETENTION_DAYS"
+        printf 'CONTAINER_METRICS=%q\n' "$CONTAINER_METRICS"
+        printf 'GRAFANA_PASSWORD=%q\n' "$GRAFANA_PASSWORD"
+    } > "$SETTINGS_FILE" || fail "Cannot write settings."
+}
+
+# Render the files Docker Compose reads. Safe to run repeatedly.
+render_env() {
+    [ -f "$SETTINGS_FILE" ] || fail "Settings are missing. Reinstall or reconfigure the app."
+    . "$SETTINGS_FILE"
+
+    mkdir -p "$TRIM_PKGVAR/prometheus" "$TRIM_PKGVAR/grafana" \
+        || fail "Cannot create data directories."
+
+    local profiles=""
+    [ "$CONTAINER_METRICS" = "true" ] && profiles="containers"
+
+    umask 022
+    {
+        echo "APP_UID=$(id -u)"
+        echo "APP_GID=$(id -g)"
+        echo "PROM_RETENTION=${RETENTION_DAYS}d"
+        echo "COMPOSE_PROFILES=${profiles}"
+    } > "$COMPOSE_ENV" || fail "Cannot write the Compose environment file."
+
+    umask 077
+    {
+        echo "GF_SECURITY_ADMIN_USER=admin"
+        # Single quotes stop Compose from interpolating $ in the password.
+        echo "GF_SECURITY_ADMIN_PASSWORD='${GRAFANA_PASSWORD}'"
+    } > "$GRAFANA_ENV" || fail "Cannot write the Grafana environment file."
+}
+
+# Grafana only reads the admin password when its database is first created.
+# After that, a new password has to be applied through the Grafana CLI.
+apply_password_change() {
+    [ "$PASSWORD_CHANGED" = "true" ] || return 0
+    if docker inspect -f '{{.State.Running}}' fygo-monitor-grafana 2>/dev/null | grep -q true; then
+        docker exec fygo-monitor-grafana grafana cli admin reset-admin-password "$GRAFANA_PASSWORD" >/dev/null 2>&1 \
+            || fail "Could not update the Grafana password. Restart the app and try again."
+    fi
+}

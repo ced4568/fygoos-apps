@@ -1,0 +1,13 @@
+[
+  {
+    "stepTitle": "Uninstall",
+    "items": [
+      {
+        "type": "switch",
+        "field": "wizard_delete_data",
+        "label": "Also delete stored metrics and Grafana data",
+        "initValue": false
+      }
+    ]
+  }
+]

@@ -1,0 +1,43 @@
+[
+  {
+    "stepTitle": "Grafana",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "Fygo Monitor opens Grafana with a ready-made NAS dashboard. Sign in as admin with the password you set here."
+      },
+      {
+        "type": "password",
+        "field": "wizard_grafana_password",
+        "label": "Grafana admin password",
+        "rules": [
+          { "required": true, "message": "Enter a password" },
+          { "min": 8, "message": "Use at least 8 characters" }
+        ]
+      }
+    ]
+  },
+  {
+    "stepTitle": "Metrics",
+    "items": [
+      {
+        "type": "select",
+        "field": "wizard_retention_days",
+        "label": "Keep metrics for",
+        "initValue": "15",
+        "options": [
+          { "label": "7 days", "value": "7" },
+          { "label": "15 days", "value": "15" },
+          { "label": "30 days", "value": "30" },
+          { "label": "90 days", "value": "90" }
+        ]
+      },
+      {
+        "type": "switch",
+        "field": "wizard_container_metrics",
+        "label": "Monitor Docker containers (runs cAdvisor with elevated privileges)",
+        "initValue": false
+      }
+    ]
+  }
+]

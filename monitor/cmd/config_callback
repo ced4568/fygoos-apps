@@ -1,0 +1,7 @@
+#!/bin/bash
+# Runs after the user changes settings. Fygo OS may need to restart the app for changes to apply.
+. "$(dirname "$0")/common"
+save_settings
+render_env
+apply_password_change
+exit 0

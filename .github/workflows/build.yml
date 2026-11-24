@@ -1,0 +1,57 @@
+name: build-fpk
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write   # needed to attach .fpk files to releases
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lint tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+
+      - name: Validate all apps
+        run: ./scripts/validate.sh
+
+      # fygopack is published on developer.fygonas.com/docs/cli/fygopack/.
+      # Set a repo variable FYGOPACK_URL to the Linux amd64 download link (v1.3.3 at time of writing).
+      - name: Install fygopack
+        env:
+          FYGOPACK_URL: ${{ vars.FYGOPACK_URL }}
+        run: |
+          [ -n "$FYGOPACK_URL" ] || { echo "::error::Repo variable FYGOPACK_URL is not set"; exit 1; }
+          curl -fsSL "$FYGOPACK_URL" -o fygopack
+          chmod +x fygopack
+          sudo mv fygopack /usr/local/bin/fygopack
+          fygopack --help >/dev/null
+
+      - name: Build every app
+        run: |
+          for m in */manifest; do
+            dir="${m%/manifest}"
+            echo "::group::fygopack build $dir"
+            fygopack build --directory "$dir"
+            echo "::endgroup::"
+          done
+          find . -name '*.fpk' -not -path './.git/*'
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fpk
+          path: "**/*.fpk"
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "**/*.fpk"

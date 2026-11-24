@@ -1,0 +1,82 @@
+# Fygo Monitor stack
+# Variables:
+#   TRIM_SERVICE_PORT, TRIM_PKGVAR, TRIM_APPDEST  -> provided by Fygo OS
+#   APP_UID, APP_GID, PROM_RETENTION, COMPOSE_PROFILES -> written to .env by cmd/common (render_env)
+# Image tags are pinned (last bumped 2026-11-24). Check for newer stable releases before each release.
+
+name: fygo-monitor
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    container_name: fygo-monitor-prometheus
+    restart: unless-stopped
+    user: "${APP_UID}:${APP_GID}"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROM_RETENTION:-15d}
+      - --web.enable-lifecycle
+    volumes:
+      - "${TRIM_APPDEST}/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "${TRIM_PKGVAR}/prometheus:/prometheus"
+    networks: [monitor]
+    # No ports published: Prometheus is internal only.
+
+  node-exporter:
+    image: prom/node-exporter:v1.13.1
+    container_name: fygo-monitor-node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|var/lib/containers/.+)($$|/)
+    volumes:
+      - "/:/host:ro,rslave"
+    networks: [monitor]
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.61.1
+    container_name: fygo-monitor-cadvisor
+    restart: unless-stopped
+    profiles: ["containers"]   # enabled only when the user turns on container metrics in the wizard
+    privileged: true
+    devices:
+      - /dev/kmsg
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+    volumes:
+      - "/:/rootfs:ro"
+      - "/var/run:/var/run:ro"
+      - "/sys:/sys:ro"
+      - "/var/lib/docker/:/var/lib/docker:ro"
+    networks: [monitor]
+
+  grafana:
+    image: grafana/grafana:13.3.1
+    container_name: fygo-monitor-grafana
+    restart: unless-stopped
+    user: "${APP_UID}:${APP_GID}"
+    depends_on: [prometheus]
+    ports:
+      - "${TRIM_SERVICE_PORT}:3000"
+    env_file:
+      - "${TRIM_PKGVAR}/grafana.env"   # admin password lives here, written by cmd/common
+    environment:
+      GF_SECURITY_ALLOW_EMBEDDING: "true"     # required: Fygo opens the app in an iframe
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana-dashboards/fygo-nas-overview.json
+    volumes:
+      - "${TRIM_PKGVAR}/grafana:/var/lib/grafana"
+      - "${TRIM_APPDEST}/docker/grafana/provisioning:/etc/grafana/provisioning:ro"
+      - "${TRIM_APPDEST}/docker/grafana/dashboards:/var/lib/grafana-dashboards:ro"
+    networks: [monitor]
+
+networks:
+  monitor:
+    name: fygo-monitor

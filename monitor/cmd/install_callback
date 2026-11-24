@@ -1,0 +1,5 @@
+#!/bin/bash
+. "$(dirname "$0")/common"
+save_settings
+render_env
+exit 0

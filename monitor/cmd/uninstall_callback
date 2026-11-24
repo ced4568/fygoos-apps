@@ -1,0 +1,8 @@
+#!/bin/bash
+# Respect the user's choice from wizard/uninstall. Default is to keep data.
+if [ "$wizard_delete_data" = "true" ]; then
+    rm -rf "${TRIM_PKGVAR:?}/prometheus" "${TRIM_PKGVAR:?}/grafana" "${TRIM_PKGVAR:?}/grafana.env"
+    rm -f "${TRIM_PKGETC:?}/settings.env"
+fi
+docker network rm fygo-monitor >/dev/null 2>&1 || true
+exit 0

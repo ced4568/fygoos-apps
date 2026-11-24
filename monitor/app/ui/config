@@ -1,0 +1,13 @@
+{
+  ".url": {
+    "fygo-monitor.main": {
+      "title": "Fygo Monitor",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "http",
+      "port": "3300",
+      "url": "/",
+      "allUsers": false
+    }
+  }
+}

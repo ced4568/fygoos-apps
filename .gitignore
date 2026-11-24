@@ -1,0 +1,4 @@
+*.fpk
+.env
+test.env
+grafana.env
