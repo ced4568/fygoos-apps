@@ -27,7 +27,7 @@ services:
     image: prom/node-exporter:v1.13.1
     container_name: fygo-monitor-node-exporter
     restart: unless-stopped
-    pid: host
+    # No pid: host. Tested 2026-11-24: identical metrics without it (see PERMISSIONS.md).
     command:
       - --path.rootfs=/host
       - --path.procfs=/host/proc
@@ -42,14 +42,13 @@ services:
     container_name: fygo-monitor-cadvisor
     restart: unless-stopped
     profiles: ["containers"]   # enabled only when the user turns on container metrics in the wizard
-    privileged: true
-    devices:
-      - /dev/kmsg
+    # Not privileged, no /dev/kmsg, no / mount. Tested 2026-11-24: only OOM event
+    # counts are lost (see PERMISSIONS.md).
     command:
       - --docker_only=true
       - --housekeeping_interval=30s
     volumes:
-      - "/:/rootfs:ro"
+      - "/proc:/rootfs/proc:ro"   # per-container network stats
       - "/var/run:/var/run:ro"
       - "/sys:/sys:ro"
       - "/var/lib/docker/:/var/lib/docker:ro"

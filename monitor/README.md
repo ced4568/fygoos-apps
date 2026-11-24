@@ -9,7 +9,7 @@ Prometheus + Grafana monitoring packaged as a Fygo OS app. Install it, open it f
 | Grafana | UI, opened from the Fygo desktop | port 3300 |
 | Prometheus | Stores metrics (retention set in the wizard) | internal only |
 | node-exporter | Host metrics: CPU, memory, disks, ZFS, network | internal only |
-| cAdvisor | Container metrics, off by default (needs privileged mode) | internal only |
+| cAdvisor | Container metrics, off by default (reads the Docker socket, see PERMISSIONS.md) | internal only |
 
 ## Project layout
 
@@ -53,14 +53,14 @@ Metrics and Grafana data live in `$TRIM_PKGVAR`. Uninstall keeps them unless the
 
 The docs don't cover these, so check each one:
 
-- [ ] Fygo OS runs Compose from `$TRIM_APPDEST/docker`, so the generated `.env` is picked up. If not, move the values into `environment:` blocks.
+- [x] Fygo OS runs Compose from the app's working directory and reads the `.env` next to `docker-compose.yaml`, so the generated `.env` is picked up. Confirmed by FygoOS, 2026-11-24.
 - [ ] `TRIM_PKGVAR` and `TRIM_APPDEST` are set when Fygo OS runs `docker compose`, not only in the scripts.
 - [ ] Lifecycle scripts run as the package user, and `id -u` / `id -g` give a UID that can write to `$TRIM_PKGVAR`.
 - [ ] `install_callback` runs before Fygo OS first starts the Compose project. If not, the first start fails because `grafana.env` is missing.
 - [ ] Wizard `switch` values come through as the strings `true` / `false`.
 - [ ] The `{0}` in `images/icon_{0}.png` is replaced with a pixel size (64 and 256 are included). Rename if it isn't.
 - [ ] Grafana loads inside the Fygo desktop iframe (needs `GF_SECURITY_ALLOW_EMBEDDING`, already set) and login cookies work there.
-- [ ] Fygo OS allows `pid: host`, the read-only `/` mount for node-exporter and `privileged` for cAdvisor. Ask the review team if any of these will block approval.
+- [ ] Fygo OS review accepts the host access listed in [PERMISSIONS.md](PERMISSIONS.md) (read-only `/` for node-exporter; read-only `/proc`, `/sys`, `/var/run` and `/var/lib/docker` for cAdvisor). `pid: host` and `privileged` were removed on 2026-11-24. Re-run the PERMISSIONS.md tests on the device.
 - [ ] The ZFS panel shows data on a ZFS volume.
 - [ ] Changing the password in settings updates Grafana (`config_callback` runs `grafana cli admin reset-admin-password` in the running container).
 - [ ] After a config change, the app needs a restart from App Center for new settings to apply.
