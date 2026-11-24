@@ -33,12 +33,28 @@ jobs:
           sudo mv fygopack /usr/local/bin/fygopack
           fygopack --help >/dev/null
 
+      # Signed when the repo secrets FYGO_DEV_KEY and FYGO_DEV_CRT (PEM text) are set.
+      # Until then the build is unsigned (--nosign): fine for test installs, not for publishing.
       - name: Build every app
+        env:
+          FYGO_DEV_KEY: ${{ secrets.FYGO_DEV_KEY }}
+          FYGO_DEV_CRT: ${{ secrets.FYGO_DEV_CRT }}
         run: |
+          if [ -n "$FYGO_DEV_KEY" ] && [ -n "$FYGO_DEV_CRT" ]; then
+            umask 077
+            printf '%s\n' "$FYGO_DEV_KEY" > "$RUNNER_TEMP/developer.key"
+            printf '%s\n' "$FYGO_DEV_CRT" > "$RUNNER_TEMP/developer.crt"
+            sign="--key $RUNNER_TEMP/developer.key --cert $RUNNER_TEMP/developer.crt"
+            echo "SIGNED=true" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No developer certificate secrets set. Building UNSIGNED packages (test only)."
+            sign="--nosign"
+          fi
           for m in */manifest; do
             dir="${m%/manifest}"
             echo "::group::fygopack build $dir"
-            fygopack build --directory "$dir"
+            # shellcheck disable=SC2086
+            fygopack build --directory "$dir" $sign
             echo "::endgroup::"
             # fygopack exits 0 even when packing fails, so check for the output ourselves.
             app="$(grep '^appname=' "$m" | cut -d= -f2)"
@@ -50,12 +66,12 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: fpk
+          name: ${{ env.SIGNED == 'true' && 'fpk' || 'fpk-unsigned' }}
           path: "**/*.fpk"
           if-no-files-found: error
 
       - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && env.SIGNED == 'true'   # never release unsigned packages
         uses: softprops/action-gh-release@v2
         with:
           files: "**/*.fpk"
