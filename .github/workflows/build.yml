@@ -40,6 +40,10 @@ jobs:
             echo "::group::fygopack build $dir"
             fygopack build --directory "$dir"
             echo "::endgroup::"
+            # fygopack exits 0 even when packing fails, so check for the output ourselves.
+            app="$(grep '^appname=' "$m" | cut -d= -f2)"
+            find . -name "${app}*.fpk" -not -path './.git/*' | grep -q . \
+              || { echo "::error::fygopack produced no .fpk for $dir"; exit 1; }
           done
           find . -name '*.fpk' -not -path './.git/*'
 

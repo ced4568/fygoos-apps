@@ -36,7 +36,7 @@
         "type": "switch",
         "field": "wizard_container_metrics",
         "label": "Monitor Docker containers (runs cAdvisor with elevated privileges)",
-        "initValue": false
+        "initValue": "false"
       }
     ]
   }
