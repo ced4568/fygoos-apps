@@ -60,7 +60,7 @@ The docs don't cover these, so check each one:
 - [ ] Wizard `switch` values come through as the strings `true` / `false`.
 - [ ] The `{0}` in `images/icon_{0}.png` is replaced with a pixel size (64 and 256 are included). Rename if it isn't.
 - [ ] Grafana loads inside the Fygo desktop iframe (needs `GF_SECURITY_ALLOW_EMBEDDING`, already set) and login cookies work there.
-- [ ] Fygo OS review accepts the host access listed in [PERMISSIONS.md](PERMISSIONS.md) (read-only `/` for node-exporter; read-only `/proc`, `/sys`, `/var/run` and `/var/lib/docker` for cAdvisor). `pid: host` and `privileged` were removed on 2026-11-24. Re-run the PERMISSIONS.md tests on the device.
+- [ ] Fygo OS review accepts the host access listed in [PERMISSIONS.md](PERMISSIONS.md) (read-only `/` and host networking for node-exporter; read-only `/proc`, `/sys`, `/var/run` and `/var/lib/docker` for cAdvisor). `pid: host` and `privileged` were removed on 2026-11-24. Re-run the PERMISSIONS.md tests on the device.
 - [ ] The ZFS panel shows data on a ZFS volume.
 - [ ] Changing the password in settings updates Grafana (`config_callback` runs `grafana cli admin reset-admin-password` in the running container).
 - [ ] After a config change, the app needs a restart from App Center for new settings to apply.

@@ -10,10 +10,10 @@ App version 0.1.0. Last updated 2026-11-24.
 |---|---|---|---|
 | Prometheus | app user (`APP_UID:APP_GID`) | none | yes |
 | Grafana | app user (`APP_UID:APP_GID`) | none (one published port) | yes |
-| node-exporter | `nobody` (image default) | read-only mount of `/` | yes |
+| node-exporter | `nobody` (image default) | read-only mount of `/`; host network, metrics port bound to the app bridge only | yes |
 | cAdvisor | root inside the container | read-only `/proc`, `/sys`, `/var/run` (includes the Docker socket), `/var/lib/docker` | **no**, user opts in |
 
-No service uses `privileged`, `pid: host`, `network_mode: host`, `cap_add` or `devices`. An earlier draft used `pid: host` (node-exporter) and `privileged` plus `/dev/kmsg` (cAdvisor). Both were removed after the tests below.
+No service uses `privileged`, `pid: host`, `cap_add` or `devices`. One service, node-exporter, uses `network_mode: host`. An earlier draft used `pid: host` (node-exporter) and `privileged` plus `/dev/kmsg` (cAdvisor). Both were removed after the tests below.
 
 The one item that deserves the closest look is cAdvisor's access to the Docker socket. See "cAdvisor" below.
 
@@ -52,14 +52,18 @@ services:
     container_name: fygo-monitor-node-exporter
     restart: unless-stopped
     # No pid: host. Tested 2026-11-24: identical metrics without it (see PERMISSIONS.md).
+    # Host networking so the network panel shows the real NAS ports, not the container's eth0.
+    # The metrics port listens only on the fygo-monitor bridge address, not on the LAN.
+    network_mode: host
+    depends_on: [prometheus]   # the bridge address must exist before node-exporter binds to it
     command:
+      - --web.listen-address=172.31.213.1:9100
       - --path.rootfs=/host
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|var/lib/containers/.+)($$|/)
     volumes:
       - "/:/host:ro,rslave"
-    networks: [monitor]
 
   cadvisor:
     image: ghcr.io/google/cadvisor:v0.61.1
@@ -103,6 +107,13 @@ services:
 networks:
   monitor:
     name: fygo-monitor
+    # ponytail: fixed subnet so node-exporter has a known address to bind to. If it collides
+    # with an existing Docker network, change it here, in node-exporter's listen address
+    # and in prometheus.yml.
+    ipam:
+      config:
+        - subnet: 172.31.213.0/28
+          gateway: 172.31.213.1
 ```
 
 `TRIM_*` variables come from FygoOS. `APP_UID`, `APP_GID`, `PROM_RETENTION` and `COMPOSE_PROFILES` are written to `.env` by `cmd/common`.
@@ -137,8 +148,13 @@ networks:
 |---|---|---|
 | User | `nobody` (image default) | Not root, so no effective capabilities |
 | Mount | `/` at `/host`, read-only, `rslave` | See below |
-| Ports | none published | |
+| Network | `network_mode: host` | See below |
+| Listen address | `172.31.213.1:9100` only | The app's own bridge gateway. Not reachable from the LAN or on loopback |
 | Capabilities | Docker defaults, none added | |
+
+Why host networking: on a bridge network node-exporter can only count traffic on its own container interface. Host networking is the only way it can read the NAS network ports. It opens no ports on the LAN: the metrics endpoint binds to the gateway address of the app's private bridge (`fygo-monitor`, fixed subnet `172.31.213.0/28`), where only Prometheus reaches it. The process still runs as `nobody` with no added capabilities, so it cannot change network settings or sniff traffic.
+
+Alternative tested: staying on the bridge network. Rejected, because the network panel then shows only the container's `eth0`.
 
 Why the read-only `/` mount: node-exporter reads CPU, memory, disk I/O and ZFS numbers from `/host/proc` and `/host/sys`, and gets volume free space by calling `statfs` on every mount point it finds in the host mount table. It can only do that for paths it can see. `rslave` lets it see volumes that are mounted after the container starts, such as a storage pool added later. It never writes; the mount is read-only.
 
@@ -205,6 +221,11 @@ cAdvisor v0.61.1 (compared on one running container, 55 metric series in the bas
 
 Effective capabilities inside cAdvisor went from the full set (`000001ffffffffff`, privileged) to the Docker default set (`00000000a80425fb`).
 
-## Known gap that may lead to one more request
+Host networking for node-exporter (full stack, all four services, same machine):
 
-node-exporter runs on the app's private bridge network, so its network counters cover only its own container interface, not the NAS network ports. Showing real NAS network traffic needs `network_mode: host` for node-exporter. That is **not** requested in 0.1.0. If it is acceptable to the review team it will be added and listed here; otherwise the network panel will be removed.
+| Check | Result |
+|---|---|
+| Bridge network (old) | reports only the container's `eth0` and `lo` |
+| `network_mode: host` **(shipped)** | reports the real ports (`enp0s31f6`, `wlp3s0`, ...); Prometheus target `up` |
+| Listening sockets on the host | `172.31.213.1:9100` only |
+| `curl` to the LAN address and to `127.0.0.1` on port 9100 | refused |

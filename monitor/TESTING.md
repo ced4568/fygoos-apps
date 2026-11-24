@@ -17,14 +17,17 @@ Environment: Ubuntu, kernel 7.0, Docker with cgroup v2, AppArmor, containerd ima
 
 Also smoke-tested earlier the same day: Prometheus v3.16.0 and Grafana 13.3.1 start, the datasource and dashboard are provisioned, the retention flag applies, `grafana cli admin reset-admin-password` works.
 
-### Bug found
+### Bug found and fixed
 
-- **Network panel shows the wrong interface.** node-exporter on the bridge network reports only `eth0` and `lo` of its own container for `node_network_receive_bytes_total` / `transmit`. With `network_mode: host` it reports the real ports. Not fixed yet: needs a decision (ask review for host networking, or drop the panel).
+- **Network panel showed the wrong interface.** node-exporter on the bridge network reported only `eth0` and `lo` of its own container. Fixed with `network_mode: host`, with the metrics port bound to the app bridge gateway `172.31.213.1:9100`.
+- Full stack check after the fix (all four services via Compose, container metrics on): all three Prometheus targets `up`, real host ports reported, 6 named containers from cAdvisor, Grafana healthy, port 9100 refused on the LAN address and on loopback.
 
 ### Not tested yet (needs FygoOS)
 
 - [ ] Repeat the node-exporter and cAdvisor variants on FygoOS. Kernel, cgroup version and Docker storage setup may differ.
 - [ ] `docker info -f '{{.DockerRootDir}} {{.Driver}} {{.CgroupVersion}}'` on FygoOS. If the Docker root is not `/var/lib/docker`, fix the cAdvisor mount.
+- [ ] Subnet `172.31.213.0/28` does not collide with a FygoOS Docker network, and the FygoOS firewall lets Prometheus reach `172.31.213.1:9100`.
+- [ ] node-exporter comes back after a NAS reboot (it binds to the bridge address, which must exist first).
 - [ ] Container CPU and memory panels show data with container metrics on.
 - [ ] Volume free space shows for every storage pool, including one added after install (`rslave`).
 - [ ] ZFS panel (the ZFS collector had no data on the test machine, which has no ZFS).

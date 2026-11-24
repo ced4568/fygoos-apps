@@ -28,14 +28,18 @@ services:
     container_name: fygo-monitor-node-exporter
     restart: unless-stopped
     # No pid: host. Tested 2026-11-24: identical metrics without it (see PERMISSIONS.md).
+    # Host networking so the network panel shows the real NAS ports, not the container's eth0.
+    # The metrics port listens only on the fygo-monitor bridge address, not on the LAN.
+    network_mode: host
+    depends_on: [prometheus]   # the bridge address must exist before node-exporter binds to it
     command:
+      - --web.listen-address=172.31.213.1:9100
       - --path.rootfs=/host
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|var/lib/containers/.+)($$|/)
     volumes:
       - "/:/host:ro,rslave"
-    networks: [monitor]
 
   cadvisor:
     image: ghcr.io/google/cadvisor:v0.61.1
@@ -79,3 +83,10 @@ services:
 networks:
   monitor:
     name: fygo-monitor
+    # ponytail: fixed subnet so node-exporter has a known address to bind to. If it collides
+    # with an existing Docker network, change it here, in node-exporter's listen address
+    # and in prometheus.yml.
+    ipam:
+      config:
+        - subnet: 172.31.213.0/28
+          gateway: 172.31.213.1
