@@ -307,5 +307,7 @@ Run on 2026-11-25 on FygoOS 1.2.1010 in a VM: Docker 28.5.2, overlay2, cgroup v2
 | cAdvisor with `/proc` and `/var/lib/docker` mounts (old) | no containers identified |
 | cAdvisor with read-only `/` and the data-root link **(shipped)** | all four app containers reported by name; CPU, memory, network and filesystem series present; target `up` |
 | Grafana admin login | default `admin`/`admin` rejected; wizard password accepted |
-
-Not yet run on FygoOS: the node-exporter narrow-mount variants C and D, and the ZFS collector.
+| node-exporter A (`pid: host` + `/`) vs B (`/` only, shipped) | 1255 series each, identical metric names |
+| node-exporter C (`/proc`, `/sys`, `/vol1` only) | 1246 series; OS info lost, one filesystem error |
+| Volume mounted after the app started | reported within one scrape (`rslave`); the app's mounts did not block unmounting it |
+| After a reboot | all services return; port 9100 again bound to `172.31.213.1` only |

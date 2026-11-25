@@ -62,13 +62,15 @@ Checked on Fygo OS 1.2.1010 on 2026-11-25. Details in [TESTING.md](TESTING.md).
 - [x] Wizard `switch` values come through as the strings `true` / `false`.
 - [x] The app icon shows in App Center and in the app window.
 - [x] Grafana loads inside the Fygo desktop iframe and login works there.
-- [x] After a config change, the app needs a restart from App Center for new settings to apply. Fygo OS does not restart it.
-- [x] Upgrade through Manual Install re-creates the containers and keeps metrics, dashboards and settings.
-- [ ] Changing the password in settings updates Grafana after a restart.
+- [x] Changing password, retention or container metrics takes effect after an app restart (tested by running `config_callback` as the package user, not yet through the settings screen).
+- [x] Uninstall keeping data, then install again: metrics, dashboards and settings are kept, and the password from the new wizard run wins.
+- [x] node-exporter and the other services come back after a NAS reboot.
+- [x] A storage pool mounted after install shows up without a restart.
+- [x] The ZFS metrics behind the ZFS panel have data once a pool exists (checked in Prometheus, panel not yet looked at).
+- [ ] The settings screen in App Center calls `config_callback` with the same `wizard_*` variables, and whether Fygo OS restarts the app afterwards.
+- [ ] Upgrade through Manual Install over an installed version (does it call `upgrade_callback` and re-create the containers?).
 - [ ] Uninstall with "delete data" on removes the data. Two UI uninstalls passed `wizard_delete_data=false`; not yet clear whether the switch was on.
 - [ ] Fygo OS review accepts the host access listed in [PERMISSIONS.md](PERMISSIONS.md).
-- [ ] The ZFS panel shows data on a ZFS volume.
-- [ ] node-exporter comes back after a NAS reboot.
 
 ## Roadmap
 

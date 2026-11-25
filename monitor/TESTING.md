@@ -92,17 +92,30 @@ Paths on this VM: `TRIM_APPDEST=/vol1/@appcenter/fygo-monitor`, `TRIM_PKGVAR=/vo
 | Install through Manual Install in the web UI | Pass. The wizard showed the password, retention and container-metrics fields. |
 | App window | Grafana opens inside the Fygo desktop with the app icon, and login works in the iframe. |
 | Reinstall over kept data | Bug: Grafana kept the old admin password and ignored the new one. Fixed: the Grafana container now applies the saved password on every start. |
-| Upgrade 0.1.1 to 0.1.2 through Manual Install | Pass. Containers were re-created with the new Compose file. Metrics from before the upgrade are still there, and settings were kept. |
-| Settings change: container metrics on | Saved correctly. Fygo OS did not restart the app; after a manual restart cAdvisor started. |
+| Uninstall 0.1.1 keeping data, then install 0.1.2 | Pass. Metrics from before are still there and the password from the new wizard run works. This was first logged here as an upgrade; the App Center log shows an uninstall at 02:16 and a fresh install at 02:17. A real upgrade is still untested. |
+| Container metrics switched on in the install wizard | Pass. cAdvisor started. No settings change through App Center has been recorded yet. |
 | cAdvisor inside the installed app | Pass. Target `up`, four containers reported by name, no "failed to identify" errors. |
 | Dashboard | "Load (1m) per core" showed "No data". The division had no matching labels. Fixed with `scalar()`; the query now returns a value. |
 
-### Still to test on the VM
+### Third round, same day (command line)
 
-- [ ] Password change in the settings wizard, then restart.
-- [ ] Uninstall with "delete data" on. Both UI uninstalls so far passed `wizard_delete_data=false`.
-- [ ] The Load panel fix as seen in the UI (needs one more upgrade).
-- [ ] Reboot: does node-exporter come back (it binds to the bridge address)?
-- [ ] New storage pool added after install shows up (`rslave`).
-- [ ] ZFS panel (needs a ZFS volume; this VM has 4 GB RAM, so do it as a separate short pass).
-- [ ] Repeat the node-exporter mount variants from 2026-11-24 on FygoOS.
+| Check | Result |
+|---|---|
+| Settings script with a new password and retention 30 | Ran `cmd/config_callback` as the package user with `wizard_*` variables. Before restart: old password still valid, Prometheus still on 15d. After restart: old password 401, new password 200, retention 30d. |
+| Empty password in settings | Keeps the current password. |
+| Invalid retention (`abc`) | Script exits 1 and changes nothing. |
+| Reboot | SSH back after 42 s, Grafana healthy 35 s later. All four containers up, restart count 0, all three targets `up`, port 9100 bound to `172.31.213.1` again. |
+| Storage pool added after install | New ext4 filesystem mounted at `/vol2` while the app was running: reported within one scrape, no restart (`rslave` works). |
+| Do our containers block unmounting a volume? | No. Their mounts are slave mounts. The unmount was held by Fygo OS's own `trim_file_monitor`. |
+| ZFS | With a 1 GB test pool: `node_zfs_arc_size` 246 MB, `node_zfs_arc_c_max` 3.0 GB, the ZFS filesystem and pool state are reported. ARC series exist even with no pool, because Fygo OS loads the ZFS module. Pool destroyed afterwards. |
+| node-exporter A: `pid: host` + `/` read-only | 1255 series |
+| node-exporter B: `/` read-only only (shipped) | 1255 series, same metric names as A |
+| node-exporter C: `/proc`, `/sys`, `/vol1` only | 1246 series; OS info lost, one filesystem error, one more failed collector |
+| App status after reboot | `appcenter-cli list` shows `start` instead of `running`, although everything is up and `cmd/main status` exits 0. Cosmetic so far; check what the web UI shows. |
+
+### Still to test on the VM (all need the web UI)
+
+- [ ] Upgrade through Manual Install over the installed version.
+- [ ] A settings change through App Center, and whether Fygo OS restarts the app.
+- [ ] Uninstall with "delete data" on. Three UI uninstalls so far passed `wizard_delete_data=false`.
+- [ ] The Load panel fix and the ZFS panel as seen in Grafana.
