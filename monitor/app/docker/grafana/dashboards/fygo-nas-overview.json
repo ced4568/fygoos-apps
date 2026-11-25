@@ -251,7 +251,7 @@
             "type": "prometheus",
             "uid": "fygo-prometheus"
           },
-          "expr": "node_load1{instance=\"$instance\"} / count(node_cpu_seconds_total{mode=\"idle\",instance=\"$instance\"})",
+          "expr": "node_load1{instance=\"$instance\"} / scalar(count(node_cpu_seconds_total{mode=\"idle\",instance=\"$instance\"}))",
           "refId": "A"
         }
       ],

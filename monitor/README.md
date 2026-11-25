@@ -9,7 +9,7 @@ Prometheus + Grafana monitoring packaged as a Fygo OS app. Install it, open it f
 | Grafana | UI, opened from the Fygo desktop | port 3300 |
 | Prometheus | Stores metrics (retention set in the wizard) | internal only |
 | node-exporter | Host metrics: CPU, memory, disks, ZFS, network | internal only |
-| cAdvisor | Container metrics, off by default (reads the Docker socket, see PERMISSIONS.md) | internal only |
+| cAdvisor | Container metrics. Sleeps until switched on (reads the Docker socket, see PERMISSIONS.md) | internal only |
 
 ## Project layout
 
@@ -19,7 +19,7 @@ app/docker/docker-compose.yaml
 app/docker/prometheus/        scrape config
 app/docker/grafana/           provisioned datasource and dashboard
 app/ui/config                 desktop entry (iframe to Grafana)
-cmd/common                    settings -> .env rendering, shared by lifecycle scripts
+cmd/common                    saves settings and writes the files the containers read, shared by lifecycle scripts
 cmd/*                         lifecycle scripts
 config/resource               declares the Compose project
 wizard/install|config|uninstall
@@ -31,15 +31,16 @@ Shared tooling lives at the repo root: `scripts/validate.sh` (local pre-flight c
 
 1. The install wizard collects the Grafana password, retention and the container metrics toggle.
 2. `install_callback` validates them and saves `$TRIM_PKGETC/settings.env` (survives upgrades).
-3. `render_env` writes `app/docker/.env` (UID/GID, retention, Compose profile) and `$TRIM_PKGVAR/grafana.env` (admin credentials, mode 600).
-4. Upgrades and config changes re-run `render_env`, so nothing is lost.
+3. `render_env` writes `$TRIM_PKGVAR/settings/retention`, `$TRIM_PKGVAR/settings/container-metrics` and `$TRIM_PKGVAR/secrets/grafana-admin-password` (mode 600).
+4. Each container reads its file when it starts. There is no `.env`: Fygo OS creates the containers before `install_callback` runs and never re-creates them on start or stop.
+5. Upgrades and config changes re-run `render_env`. A changed setting applies after the app is restarted from App Center.
 
 Metrics and Grafana data live in `$TRIM_PKGVAR`. Uninstall keeps them unless the user ticks "delete data".
 
 ## First session on the VM
 
 1. Snapshot the VM before activating the license (the license is tied to the NAS ID).
-2. Enable Docker in Fygo OS.
+2. Create a storage volume, then open the Docker app and pick that volume. Docker does not start before this.
 3. Install fygopack on your workstation, then from the repo root run `./scripts/validate.sh monitor` and `fygopack build --directory monitor`.
 4. Copy the .fpk to the NAS and install with `appcenter-cli install-fpk fygo-monitor.fpk --env test.env`, where test.env contains:
    ```
@@ -48,22 +49,26 @@ Metrics and Grafana data live in `$TRIM_PKGVAR`. Uninstall keeps them unless the
    wizard_container_metrics=false
    ```
 5. Work through the assumptions below, then repeat with `wizard_container_metrics=true`.
+6. Uninstall, upgrade and settings changes only work from the web UI (App Center, Manual Install for the .fpk).
 
 ## Assumptions to verify on a real device
 
-The docs don't cover these, so check each one:
+Checked on Fygo OS 1.2.1010 on 2026-11-25. Details in [TESTING.md](TESTING.md).
 
-- [x] Fygo OS runs Compose from the app's working directory and reads the `.env` next to `docker-compose.yaml`, so the generated `.env` is picked up. Confirmed by FygoOS, 2026-11-24.
-- [ ] `TRIM_PKGVAR` and `TRIM_APPDEST` are set when Fygo OS runs `docker compose`, not only in the scripts.
-- [ ] Lifecycle scripts run as the package user, and `id -u` / `id -g` give a UID that can write to `$TRIM_PKGVAR`.
-- [ ] `install_callback` runs before Fygo OS first starts the Compose project. If not, the first start fails because `grafana.env` is missing.
-- [ ] Wizard `switch` values come through as the strings `true` / `false`.
-- [ ] The `{0}` in `images/icon_{0}.png` is replaced with a pixel size (64 and 256 are included). Rename if it isn't.
-- [ ] Grafana loads inside the Fygo desktop iframe (needs `GF_SECURITY_ALLOW_EMBEDDING`, already set) and login cookies work there.
-- [ ] Fygo OS review accepts the host access listed in [PERMISSIONS.md](PERMISSIONS.md) (read-only `/` and host networking for node-exporter; read-only `/proc`, `/sys`, `/var/run` and `/var/lib/docker` for cAdvisor). `pid: host` and `privileged` were removed on 2026-11-24. Re-run the PERMISSIONS.md tests on the device.
+- [x] ~~Fygo OS reads the `.env` next to `docker-compose.yaml`.~~ True, but useless: Compose runs before our scripts can write it. The app no longer uses `.env`.
+- [x] `TRIM_PKGVAR`, `TRIM_APPDEST`, `TRIM_SERVICE_PORT`, `TRIM_UID` and `TRIM_GID` are set when Fygo OS runs `docker compose`.
+- [x] Lifecycle scripts run as the package user. It can write to `$TRIM_PKGVAR` and `$TRIM_PKGETC`. It cannot use Docker.
+- [x] ~~`install_callback` runs before the Compose project is created.~~ False. Compose `create` runs first. Fixed by reading settings from files at container start.
+- [x] Wizard `switch` values come through as the strings `true` / `false`.
+- [x] The app icon shows in App Center and in the app window.
+- [x] Grafana loads inside the Fygo desktop iframe and login works there.
+- [x] After a config change, the app needs a restart from App Center for new settings to apply. Fygo OS does not restart it.
+- [x] Upgrade through Manual Install re-creates the containers and keeps metrics, dashboards and settings.
+- [ ] Changing the password in settings updates Grafana after a restart.
+- [ ] Uninstall with "delete data" on removes the data. Two UI uninstalls passed `wizard_delete_data=false`; not yet clear whether the switch was on.
+- [ ] Fygo OS review accepts the host access listed in [PERMISSIONS.md](PERMISSIONS.md).
 - [ ] The ZFS panel shows data on a ZFS volume.
-- [ ] Changing the password in settings updates Grafana (`config_callback` runs `grafana cli admin reset-admin-password` in the running container).
-- [ ] After a config change, the app needs a restart from App Center for new settings to apply.
+- [ ] node-exporter comes back after a NAS reboot.
 
 ## Roadmap
 

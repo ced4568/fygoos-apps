@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs after the user changes settings. Fygo OS may need to restart the app for changes to apply.
 . "$(dirname "$0")/common"
-save_settings live
+save_settings
 render_env
 exit 0

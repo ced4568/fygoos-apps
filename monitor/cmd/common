@@ -16,11 +16,9 @@ fail() {
 }
 
 # Validate and persist wizard values. Only overwrites keys the wizard actually provided.
-# "save_settings live" also pushes a changed password into the running Grafana first.
 save_settings() {
     mkdir -p "$TRIM_PKGETC" || fail "Cannot create the configuration directory."
     [ -f "$SETTINGS_FILE" ] && . "$SETTINGS_FILE"
-    OLD_GRAFANA_PASSWORD="$GRAFANA_PASSWORD"
 
     if [ -n "$wizard_retention_days" ]; then
         case "$wizard_retention_days" in
@@ -46,14 +44,12 @@ save_settings() {
         case "$wizard_grafana_password" in
             *"'"*) fail "The Grafana password cannot contain a single quote (')." ;;
         esac
-        PASSWORD_CHANGED=true
         GRAFANA_PASSWORD="$wizard_grafana_password"
     fi
 
     RETENTION_DAYS="${RETENTION_DAYS:-15}"
     CONTAINER_METRICS="${CONTAINER_METRICS:-false}"
     [ -n "$GRAFANA_PASSWORD" ] || fail "A Grafana admin password is required."
-    [ "$1" = "live" ] && apply_password_change
 
     umask 077
     {
@@ -78,26 +74,7 @@ render_env() {
 
     umask 077
     mkdir -p "$SECRETS_DIR" || fail "Cannot create the secrets directory."
-    # Grafana only reads this when it first creates its database.
+    # Applied by the Grafana container every time it starts (see docker-compose.yaml).
     printf '%s' "$GRAFANA_PASSWORD" > "$SECRETS_DIR/grafana-admin-password" \
         || fail "Cannot write the Grafana password file."
-}
-
-# Grafana ignores the password file once its database exists, so a new password goes in
-# through the Grafana API, signed in with the old one. Runs before the new one is saved.
-apply_password_change() {
-    [ "$PASSWORD_CHANGED" = "true" ] || return 0
-    [ -n "$OLD_GRAFANA_PASSWORD" ] || return 0
-    [ "$OLD_GRAFANA_PASSWORD" != "$GRAFANA_PASSWORD" ] || return 0
-    local body code
-    body=$(printf '{"password":"%s"}' "$(printf '%s' "$GRAFANA_PASSWORD" | sed 's/[\\"]/\\&/g')")
-    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -u "admin:${OLD_GRAFANA_PASSWORD}" \
-        -H 'Content-Type: application/json' -X PUT -d "$body" \
-        "http://127.0.0.1:${TRIM_SERVICE_PORT:-3300}/api/admin/users/1/password")
-    case "$code" in
-        200) ;;
-        000) fail "Grafana is not running. Start the app, then change the password again." ;;
-        401) fail "Grafana rejected the saved admin password. If you changed it inside Grafana, change it there." ;;
-        *)   fail "Could not update the Grafana password (HTTP $code)." ;;
-    esac
 }

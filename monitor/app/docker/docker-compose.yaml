@@ -91,6 +91,19 @@ services:
     restart: unless-stopped
     user: "${TRIM_UID}:${TRIM_GID}"
     depends_on: [prometheus]
+    # Grafana only reads the password file when it creates its database. Applying it on every
+    # start makes the app settings the one source of truth: a password change, or a reinstall
+    # over kept data, takes effect on the next start. A password changed inside Grafana is
+    # overwritten by the saved one at the next start.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        f=/etc/fygo-monitor-secrets/grafana-admin-password
+        if [ -f /var/lib/grafana/grafana.db ] && [ -s "$$f" ]; then
+          grafana cli --homepath /usr/share/grafana admin reset-admin-password --password-from-stdin < "$$f" >/dev/null 2>&1 \
+            || echo "Could not apply the saved admin password."
+        fi
+        exec /run.sh
     ports:
       - "${TRIM_SERVICE_PORT}:3000"
     environment:

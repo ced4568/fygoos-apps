@@ -85,13 +85,23 @@ Paths on this VM: `TRIM_APPDEST=/vol1/@appcenter/fygo-monitor`, `TRIM_PKGVAR=/vo
 | Uninstall keeping data (web UI) | Containers and network removed. Data, settings and the `fygo-monitor` system user stay. |
 | Reinstall over kept data | Works, but the old Grafana database keeps its old admin password; the new wizard password is ignored. Open issue. |
 
+### Second round, same day (web UI)
+
+| Check | Result |
+|---|---|
+| Install through Manual Install in the web UI | Pass. The wizard showed the password, retention and container-metrics fields. |
+| App window | Grafana opens inside the Fygo desktop with the app icon, and login works in the iframe. |
+| Reinstall over kept data | Bug: Grafana kept the old admin password and ignored the new one. Fixed: the Grafana container now applies the saved password on every start. |
+| Upgrade 0.1.1 to 0.1.2 through Manual Install | Pass. Containers were re-created with the new Compose file. Metrics from before the upgrade are still there, and settings were kept. |
+| Settings change: container metrics on | Saved correctly. Fygo OS did not restart the app; after a manual restart cAdvisor started. |
+| cAdvisor inside the installed app | Pass. Target `up`, four containers reported by name, no "failed to identify" errors. |
+| Dashboard | "Load (1m) per core" showed "No data". The division had no matching labels. Fixed with `scalar()`; the query now returns a value. |
+
 ### Still to test on the VM
 
-- [ ] Clean install through the web UI wizard (not the CLI), container metrics off, then on.
-- [ ] cAdvisor fix inside the installed app (so far only verified as a standalone container).
-- [ ] Settings change in the web UI: retention, container metrics, password. Does FygoOS restart the app afterwards?
-- [ ] Upgrade 0.1.0 to 0.1.1 through the web UI. Do containers get re-created, and do data and settings survive?
-- [ ] Uninstall with "delete data" on.
+- [ ] Password change in the settings wizard, then restart.
+- [ ] Uninstall with "delete data" on. Both UI uninstalls so far passed `wizard_delete_data=false`.
+- [ ] The Load panel fix as seen in the UI (needs one more upgrade).
 - [ ] Reboot: does node-exporter come back (it binds to the bridge address)?
 - [ ] New storage pool added after install shows up (`rslave`).
 - [ ] ZFS panel (needs a ZFS volume; this VM has 4 GB RAM, so do it as a separate short pass).

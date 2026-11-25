@@ -2,20 +2,22 @@
 
 For the FygoOS app review team. This lists every piece of host-level access the app asks for, why, and what was tried to reduce it.
 
-App version 0.1.0. Last updated 2026-11-24.
+App version 0.1.0. Last updated 2026-11-25, after the first test run on FygoOS 1.2.1010.
 
 ## Summary
 
-| Service | Runs as | Host access | On by default |
+| Service | Runs as | Host access | Active by default |
 |---|---|---|---|
-| Prometheus | app user (`APP_UID:APP_GID`) | none | yes |
-| Grafana | app user (`APP_UID:APP_GID`) | none (one published port) | yes |
+| Prometheus | package user (`TRIM_UID:TRIM_GID`) | none | yes |
+| Grafana | package user (`TRIM_UID:TRIM_GID`) | none (one published port) | yes |
 | node-exporter | `nobody` (image default) | read-only mount of `/`; host network, metrics port bound to the app bridge only | yes |
-| cAdvisor | root inside the container | read-only `/proc`, `/sys`, `/var/run` (includes the Docker socket), `/var/lib/docker` | **no**, user opts in |
+| cAdvisor | root inside the container | read-only `/`, `/sys`, `/var/run` (includes the Docker socket) | **no**: the container exists but only sleeps until the user opts in |
 
 No service uses `privileged`, `pid: host`, `cap_add` or `devices`. One service, node-exporter, uses `network_mode: host`. An earlier draft used `pid: host` (node-exporter) and `privileged` plus `/dev/kmsg` (cAdvisor). Both were removed after the tests below.
 
-The one item that deserves the closest look is cAdvisor's access to the Docker socket. See "cAdvisor" below.
+Two items deserve the closest look, both on cAdvisor: its access to the Docker socket, and the fact that its container is created with those mounts even when the feature is off. See "cAdvisor" below.
+
+The lifecycle scripts in `cmd/` run as the package user and never call Docker.
 
 ## Full Compose config
 
@@ -24,8 +26,15 @@ Source of truth: `app/docker/docker-compose.yaml`. Copied here as shipped.
 ```yaml
 # Fygo Monitor stack
 # Variables:
-#   TRIM_SERVICE_PORT, TRIM_PKGVAR, TRIM_APPDEST  -> provided by Fygo OS
-#   APP_UID, APP_GID, PROM_RETENTION, COMPOSE_PROFILES -> written to .env by cmd/common (render_env)
+#   TRIM_SERVICE_PORT, TRIM_PKGVAR, TRIM_APPDEST, TRIM_UID, TRIM_GID -> provided by Fygo OS
+#
+# Fygo OS runs "docker compose create" BEFORE cmd/install_callback, and start/stop never
+# re-create containers (tested on Fygo OS 1.2.1010). So nothing here may depend on a .env or
+# env_file written by our scripts. User settings are read from files at container START instead:
+#   ${TRIM_PKGVAR}/settings/retention           e.g. "15d"
+#   ${TRIM_PKGVAR}/settings/container-metrics   "true" or "false"
+#   ${TRIM_PKGVAR}/secrets/grafana-admin-password
+# cmd/common (render_env) writes them. A settings change applies on the next app restart.
 # Image tags are pinned (last bumped 2026-11-24). Check for newer stable releases before each release.
 
 name: fygo-monitor
@@ -35,13 +44,17 @@ services:
     image: prom/prometheus:v3.16.0
     container_name: fygo-monitor-prometheus
     restart: unless-stopped
-    user: "${APP_UID}:${APP_GID}"
+    user: "${TRIM_UID}:${TRIM_GID}"
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=${PROM_RETENTION:-15d}
-      - --web.enable-lifecycle
+      - >-
+        exec /bin/prometheus
+        --config.file=/etc/prometheus/prometheus.yml
+        --storage.tsdb.path=/prometheus
+        --storage.tsdb.retention.time="$$(cat /etc/fygo-monitor/retention 2>/dev/null || echo 15d)"
+        --web.enable-lifecycle
     volumes:
+      - "${TRIM_PKGVAR}/settings:/etc/fygo-monitor:ro"
       - "${TRIM_APPDEST}/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
       - "${TRIM_PKGVAR}/prometheus:/prometheus"
     networks: [monitor]
@@ -69,30 +82,59 @@ services:
     image: ghcr.io/google/cadvisor:v0.61.1
     container_name: fygo-monitor-cadvisor
     restart: unless-stopped
-    profiles: ["containers"]   # enabled only when the user turns on container metrics in the wizard
-    # Not privileged, no /dev/kmsg, no / mount. Tested 2026-11-24: only OOM event
-    # counts are lost (see PERMISSIONS.md).
+    # Not privileged, no /dev/kmsg. Tested 2026-11-24: only OOM event counts are lost
+    # (see PERMISSIONS.md).
+    # The container always exists (Fygo OS creates it before the wizard answers are saved, so a
+    # Compose profile cannot work). cAdvisor itself only runs when the user turned container
+    # metrics on; otherwise the container sleeps and reads nothing.
+    # Fygo OS keeps Docker's data on a storage volume the user picks (e.g. /vol1/docker), and
+    # cAdvisor must see it at that same path or it finds no containers. The path is unknown
+    # when the container is created, so the read-only / mount is needed: the start script
+    # reads data-root from the host's daemon.json and links it into place.
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - --docker_only=true
-      - --housekeeping_interval=30s
+      - |
+        if [ "$$(cat /etc/fygo-monitor/container-metrics 2>/dev/null)" != "true" ]; then
+          echo "Container metrics are off. Turn them on in the app settings, then restart the app."
+          exec sleep infinity
+        fi
+        root=$$(sed -n 's/.*"data-root" *: *"\([^"]*\)".*/\1/p' /rootfs/etc/docker/daemon.json 2>/dev/null)
+        root=$${root:-/var/lib/docker}
+        mkdir -p "$$(dirname "$$root")" && ln -sfn "/rootfs$$root" "$$root"
+        exec /usr/bin/cadvisor --docker_only=true --housekeeping_interval=30s
+    healthcheck:
+      disable: true   # the image's check would mark the sleeping container unhealthy
     volumes:
-      - "/proc:/rootfs/proc:ro"   # per-container network stats
+      - "${TRIM_PKGVAR}/settings:/etc/fygo-monitor:ro"
+      - "/:/rootfs:ro,rslave"
       - "/var/run:/var/run:ro"
       - "/sys:/sys:ro"
-      - "/var/lib/docker/:/var/lib/docker:ro"
     networks: [monitor]
 
   grafana:
     image: grafana/grafana:13.3.1
     container_name: fygo-monitor-grafana
     restart: unless-stopped
-    user: "${APP_UID}:${APP_GID}"
+    user: "${TRIM_UID}:${TRIM_GID}"
     depends_on: [prometheus]
+    # Grafana only reads the password file when it creates its database. Applying it on every
+    # start makes the app settings the one source of truth: a password change, or a reinstall
+    # over kept data, takes effect on the next start. A password changed inside Grafana is
+    # overwritten by the saved one at the next start.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        f=/etc/fygo-monitor-secrets/grafana-admin-password
+        if [ -f /var/lib/grafana/grafana.db ] && [ -s "$$f" ]; then
+          grafana cli --homepath /usr/share/grafana admin reset-admin-password --password-from-stdin < "$$f" >/dev/null 2>&1 \
+            || echo "Could not apply the saved admin password."
+        fi
+        exec /run.sh
     ports:
       - "${TRIM_SERVICE_PORT}:3000"
-    env_file:
-      - "${TRIM_PKGVAR}/grafana.env"   # admin password lives here, written by cmd/common
     environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /etc/fygo-monitor-secrets/grafana-admin-password
       GF_SECURITY_ALLOW_EMBEDDING: "true"     # required: Fygo opens the app in an iframe
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
@@ -100,6 +142,7 @@ services:
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana-dashboards/fygo-nas-overview.json
     volumes:
       - "${TRIM_PKGVAR}/grafana:/var/lib/grafana"
+      - "${TRIM_PKGVAR}/secrets:/etc/fygo-monitor-secrets:ro"
       - "${TRIM_APPDEST}/docker/grafana/provisioning:/etc/grafana/provisioning:ro"
       - "${TRIM_APPDEST}/docker/grafana/dashboards:/var/lib/grafana-dashboards:ro"
     networks: [monitor]
@@ -116,7 +159,19 @@ networks:
           gateway: 172.31.213.1
 ```
 
-`TRIM_*` variables come from FygoOS. `APP_UID`, `APP_GID`, `PROM_RETENTION` and `COMPOSE_PROFILES` are written to `.env` by `cmd/common`.
+Every variable is a `TRIM_*` variable from FygoOS. The app writes no `.env` file.
+
+## Why settings are read from files
+
+On FygoOS 1.2.1010 the installer runs `docker compose create` before the app's `install_callback` script, and start/stop never re-create containers. So the wizard answers cannot be Compose variables. Instead `cmd/common` writes three small files, and each container reads its own when it starts:
+
+| File | Read by | Content |
+|---|---|---|
+| `$TRIM_PKGVAR/settings/retention` | Prometheus | for example `15d` |
+| `$TRIM_PKGVAR/settings/container-metrics` | cAdvisor | `true` or `false` |
+| `$TRIM_PKGVAR/secrets/grafana-admin-password` (mode 600) | Grafana only | the admin password from the wizard |
+
+This is why three services override `entrypoint` with a short shell script. Each script reads its file and then starts the normal program. A settings change takes effect when the user restarts the app.
 
 ## Per service
 
@@ -124,9 +179,10 @@ networks:
 
 | Item | Value | Why |
 |---|---|---|
-| User | `APP_UID:APP_GID` | Writes only to its own data folder |
+| User | `TRIM_UID:TRIM_GID` | Writes only to its own data folder |
 | Mount | `$TRIM_APPDEST/docker/prometheus/prometheus.yml` read-only | Scrape config shipped in the package |
 | Mount | `$TRIM_PKGVAR/prometheus` read-write | Metric storage |
+| Mount | `$TRIM_PKGVAR/settings` read-only | Retention setting |
 | Ports | none published | Reached only by Grafana on the private `fygo-monitor` network |
 | Capabilities | Docker defaults, none added | |
 
@@ -134,13 +190,15 @@ networks:
 
 | Item | Value | Why |
 |---|---|---|
-| User | `APP_UID:APP_GID` | Writes only to its own data folder |
+| User | `TRIM_UID:TRIM_GID` | Writes only to its own data folder |
 | Mount | `$TRIM_PKGVAR/grafana` read-write | Grafana database |
 | Mount | `$TRIM_APPDEST/docker/grafana/provisioning` and `dashboards` read-only | Datasource and dashboard shipped in the package |
-| File | `$TRIM_PKGVAR/grafana.env` | Admin password set in the wizard |
+| Mount | `$TRIM_PKGVAR/secrets` read-only | Admin password set in the wizard. Mounted into this container only |
 | Port | `$TRIM_SERVICE_PORT` to container 3000 | The app UI |
 | Setting | `GF_SECURITY_ALLOW_EMBEDDING=true` | FygoOS opens the app in an iframe |
 | Capabilities | Docker defaults, none added | |
+
+The start script applies the saved admin password with `grafana cli admin reset-admin-password` before Grafana starts. Without it, a reinstall over kept data left the old password in place and ignored the new one from the wizard.
 
 ### node-exporter
 
@@ -171,33 +229,38 @@ Alternatives tested (results in the table below):
 
 ### cAdvisor (optional)
 
-Off by default. It starts only if the user turns on "container metrics" in the install or settings wizard (Compose profile `containers`).
+Inactive by default. The container is always created, because FygoOS creates containers before the wizard answers are saved, so a Compose profile cannot decide it. Its start script checks the `container-metrics` setting. If it is not `true`, the script runs `sleep infinity` and nothing else: cAdvisor does not start, and nothing reads the socket or the mounts. The mounts are attached to the sleeping container all the same.
 
 | Item | Value | Why |
 |---|---|---|
 | User | root in the container (image default) | Reads cgroup files and other containers' `/proc/<pid>` entries |
-| Mount | `/proc` at `/rootfs/proc`, read-only | Per-container network counters |
+| Mount | `/` at `/rootfs`, read-only, `rslave` | Docker's data folder at its real path, plus `/proc` for per-container network counters. See below |
 | Mount | `/sys` read-only | cgroup CPU, memory and I/O counters |
 | Mount | `/var/run` read-only | Docker and containerd sockets, to map cgroups to container names |
-| Mount | `/var/lib/docker` read-only | Container metadata and layer sizes |
+| Mount | `$TRIM_PKGVAR/settings` read-only | The on/off setting |
 | Ports | none published | |
 | Capabilities | Docker defaults, none added | |
 | Flag | `--docker_only=true` | Reports Docker containers only, not every host cgroup |
 
 **The Docker socket is the sensitive part.** A read-only bind mount does not make a socket read-only. A process that can reach the Docker socket can ask Docker to do anything, which is equal to root on the NAS. cAdvisor only issues read calls (list and inspect), but the access itself is broad. That is why the feature is opt-in and the service has no published port.
 
+**Why the read-only `/` mount came back.** On FygoOS, Docker's data folder is on the storage volume the user picks in the Docker app (`/vol1/docker` on the test VM), not `/var/lib/docker`. cAdvisor has to see that folder at the same path Docker reports, or it identifies no containers ("failed to identify the read-write layer ID"). The path is not known when the container is created and FygoOS does not pass it to Compose. So the start script reads `data-root` from the host's `/etc/docker/daemon.json` and links `/rootfs<data-root>` to that path inside the container.
+
+If the review team prefers a narrower mount, either of these would allow it: a `TRIM_*` variable with the Docker data path available to Compose, or a fixed path (for example a symlink) that always points at it. I would then mount only that folder and `/proc`.
+
 Alternatives tested:
 
 - **Drop `privileged` and `/dev/kmsg`.** Adopted. Every per-container metric is unchanged. The only loss is the OOM kill counter (`container_oom_events_total` stays at 0), which the dashboard does not use.
-- **Drop the `/` mount, keep only `/proc`.** Adopted. Same metrics. cAdvisor logs one "could not stat" line per container for log-folder size, which is harmless.
+- **Mount only `/proc` and `/var/lib/docker` instead of `/`.** Worked on the development machine. Rejected after the FygoOS test: no containers are identified, because Docker's data is not in `/var/lib/docker`.
 - **Drop `/proc` as well.** Rejected. Per-container network metrics disappear.
-- **Mount only the two socket files instead of `/var/run`, and drop `/var/lib/docker`.** Works on the test machine, but the socket paths depend on how Docker is set up on FygoOS, so this waits for device testing.
-- **Docker socket only, no containerd socket.** Rejected on the test machine. cAdvisor could not identify any container. This may differ on FygoOS if Docker there does not use the containerd image store.
-- **Read-only Docker API proxy in front of the socket.** Not adopted. It adds a fifth container and cAdvisor on the test machine also needed the containerd socket, which a Docker API proxy does not cover.
+- **Create the cAdvisor container only when the user opts in (Compose profile).** Rejected after the FygoOS test: containers are created before the wizard answers reach the app, and the app's scripts cannot run Docker to create it later.
+- **Run the app's scripts as root so they can manage the container themselves.** Not adopted. It is a larger privilege than a sleeping container.
+- **Docker socket only, no containerd socket.** Rejected on the development machine. cAdvisor could not identify any container.
+- **Read-only Docker API proxy in front of the socket.** Not adopted. It adds a fifth container and does not cover the containerd socket.
 
 ## Test results
 
-Run on 2026-11-24 on a development machine, **not on FygoOS**: Ubuntu, kernel 7.0, Docker with cgroup v2, AppArmor, containerd image store. All of this is repeated on a FygoOS device before submission and logged in [TESTING.md](TESTING.md).
+Run on 2026-11-24 on a development machine, **not on FygoOS**: Ubuntu, kernel 7.0, Docker with cgroup v2, AppArmor, containerd image store. The FygoOS results are in the next section and in [TESTING.md](TESTING.md).
 
 node-exporter v1.13.1:
 
@@ -213,9 +276,9 @@ cAdvisor v0.61.1 (compared on one running container, 55 metric series in the bas
 | Variant | Result |
 |---|---|
 | A. `privileged` + `/dev/kmsg` + `/`, `/var/run`, `/sys`, `/var/lib/docker` (old) | baseline |
-| B. A without `privileged` and `/dev/kmsg` | same 55 series; OOM event detection disabled |
+| B. A without `privileged` and `/dev/kmsg` **(shipped, minus the separate `/var/lib/docker` mount)** | same 55 series; OOM event detection disabled |
 | C. B without the `/` mount | per-container network metrics lost (47 series) |
-| F. B with `/proc` instead of `/` **(shipped)** | same 55 series |
+| F. B with `/proc` instead of `/` | same 55 series on this machine; finds no containers on FygoOS (see below) |
 | G. F with socket files only, no `/var/lib/docker` | same 55 series |
 | D. Docker socket and `/sys` only | no containers identified |
 
@@ -229,3 +292,20 @@ Host networking for node-exporter (full stack, all four services, same machine):
 | `network_mode: host` **(shipped)** | reports the real ports (`enp0s31f6`, `wlp3s0`, ...); Prometheus target `up` |
 | Listening sockets on the host | `172.31.213.1:9100` only |
 | `curl` to the LAN address and to `127.0.0.1` on port 9100 | refused |
+
+## Results on FygoOS
+
+Run on 2026-11-25 on FygoOS 1.2.1010 in a VM: Docker 28.5.2, overlay2, cgroup v2, AppArmor, Docker data on `/vol1/docker` (Btrfs, RAID 5). Full log in [TESTING.md](TESTING.md).
+
+| Check | Result |
+|---|---|
+| Prometheus and Grafana user | `999:991`, the package user FygoOS created |
+| node-exporter with `/` read-only and host network | target `up`; real port `enp6s18`, volumes `/` and `/vol1`, and the RAID array are reported |
+| Port 9100 | listens on `172.31.213.1` only; refused on the LAN address, also from another machine |
+| Subnet `172.31.213.0/28` | no collision with FygoOS networks (`172.17.0.0/16`, `172.18.0.0/16`) |
+| cAdvisor, container metrics off | process list shows only `sleep infinity` |
+| cAdvisor with `/proc` and `/var/lib/docker` mounts (old) | no containers identified |
+| cAdvisor with read-only `/` and the data-root link **(shipped)** | all four app containers reported by name; CPU, memory, network and filesystem series present; target `up` |
+| Grafana admin login | default `admin`/`admin` rejected; wizard password accepted |
+
+Not yet run on FygoOS: the node-exporter narrow-mount variants C and D, and the ZFS collector.
