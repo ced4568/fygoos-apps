@@ -2,10 +2,10 @@
 # Fygo OS starts and stops the Compose project declared in config/resource.
 # This script only reports status. Grafana is the user-facing service, so it decides "running".
 
-CONTAINER_NAME="fygo-monitor-grafana"
+# The package user has no Docker access, so ask Grafana directly.
 
 is_running() {
-    docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q true
+    curl -fs -o /dev/null --max-time 5 "http://127.0.0.1:${TRIM_SERVICE_PORT:-3300}/api/health"
 }
 
 case "$1" in

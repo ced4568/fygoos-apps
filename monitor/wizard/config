@@ -29,7 +29,7 @@
       {
         "type": "switch",
         "field": "wizard_container_metrics",
-        "label": "Monitor Docker containers (runs cAdvisor with elevated privileges)",
+        "label": "Monitor Docker containers (cAdvisor gets read-only access to the Docker socket)",
         "initValue": "false"
       }
     ]

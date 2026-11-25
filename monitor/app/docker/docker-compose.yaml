@@ -1,7 +1,14 @@
 # Fygo Monitor stack
 # Variables:
-#   TRIM_SERVICE_PORT, TRIM_PKGVAR, TRIM_APPDEST  -> provided by Fygo OS
-#   APP_UID, APP_GID, PROM_RETENTION, COMPOSE_PROFILES -> written to .env by cmd/common (render_env)
+#   TRIM_SERVICE_PORT, TRIM_PKGVAR, TRIM_APPDEST, TRIM_UID, TRIM_GID -> provided by Fygo OS
+#
+# Fygo OS runs "docker compose create" BEFORE cmd/install_callback, and start/stop never
+# re-create containers (tested on Fygo OS 1.2.1010). So nothing here may depend on a .env or
+# env_file written by our scripts. User settings are read from files at container START instead:
+#   ${TRIM_PKGVAR}/settings/retention           e.g. "15d"
+#   ${TRIM_PKGVAR}/settings/container-metrics   "true" or "false"
+#   ${TRIM_PKGVAR}/secrets/grafana-admin-password
+# cmd/common (render_env) writes them. A settings change applies on the next app restart.
 # Image tags are pinned (last bumped 2026-11-24). Check for newer stable releases before each release.
 
 name: fygo-monitor
@@ -11,13 +18,17 @@ services:
     image: prom/prometheus:v3.16.0
     container_name: fygo-monitor-prometheus
     restart: unless-stopped
-    user: "${APP_UID}:${APP_GID}"
+    user: "${TRIM_UID}:${TRIM_GID}"
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=${PROM_RETENTION:-15d}
-      - --web.enable-lifecycle
+      - >-
+        exec /bin/prometheus
+        --config.file=/etc/prometheus/prometheus.yml
+        --storage.tsdb.path=/prometheus
+        --storage.tsdb.retention.time="$$(cat /etc/fygo-monitor/retention 2>/dev/null || echo 15d)"
+        --web.enable-lifecycle
     volumes:
+      - "${TRIM_PKGVAR}/settings:/etc/fygo-monitor:ro"
       - "${TRIM_APPDEST}/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
       - "${TRIM_PKGVAR}/prometheus:/prometheus"
     networks: [monitor]
@@ -45,30 +56,46 @@ services:
     image: ghcr.io/google/cadvisor:v0.61.1
     container_name: fygo-monitor-cadvisor
     restart: unless-stopped
-    profiles: ["containers"]   # enabled only when the user turns on container metrics in the wizard
-    # Not privileged, no /dev/kmsg, no / mount. Tested 2026-11-24: only OOM event
-    # counts are lost (see PERMISSIONS.md).
+    # Not privileged, no /dev/kmsg. Tested 2026-11-24: only OOM event counts are lost
+    # (see PERMISSIONS.md).
+    # The container always exists (Fygo OS creates it before the wizard answers are saved, so a
+    # Compose profile cannot work). cAdvisor itself only runs when the user turned container
+    # metrics on; otherwise the container sleeps and reads nothing.
+    # Fygo OS keeps Docker's data on a storage volume the user picks (e.g. /vol1/docker), and
+    # cAdvisor must see it at that same path or it finds no containers. The path is unknown
+    # when the container is created, so the read-only / mount is needed: the start script
+    # reads data-root from the host's daemon.json and links it into place.
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - --docker_only=true
-      - --housekeeping_interval=30s
+      - |
+        if [ "$$(cat /etc/fygo-monitor/container-metrics 2>/dev/null)" != "true" ]; then
+          echo "Container metrics are off. Turn them on in the app settings, then restart the app."
+          exec sleep infinity
+        fi
+        root=$$(sed -n 's/.*"data-root" *: *"\([^"]*\)".*/\1/p' /rootfs/etc/docker/daemon.json 2>/dev/null)
+        root=$${root:-/var/lib/docker}
+        mkdir -p "$$(dirname "$$root")" && ln -sfn "/rootfs$$root" "$$root"
+        exec /usr/bin/cadvisor --docker_only=true --housekeeping_interval=30s
+    healthcheck:
+      disable: true   # the image's check would mark the sleeping container unhealthy
     volumes:
-      - "/proc:/rootfs/proc:ro"   # per-container network stats
+      - "${TRIM_PKGVAR}/settings:/etc/fygo-monitor:ro"
+      - "/:/rootfs:ro,rslave"
       - "/var/run:/var/run:ro"
       - "/sys:/sys:ro"
-      - "/var/lib/docker/:/var/lib/docker:ro"
     networks: [monitor]
 
   grafana:
     image: grafana/grafana:13.3.1
     container_name: fygo-monitor-grafana
     restart: unless-stopped
-    user: "${APP_UID}:${APP_GID}"
+    user: "${TRIM_UID}:${TRIM_GID}"
     depends_on: [prometheus]
     ports:
       - "${TRIM_SERVICE_PORT}:3000"
-    env_file:
-      - "${TRIM_PKGVAR}/grafana.env"   # admin password lives here, written by cmd/common
     environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /etc/fygo-monitor-secrets/grafana-admin-password
       GF_SECURITY_ALLOW_EMBEDDING: "true"     # required: Fygo opens the app in an iframe
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
@@ -76,6 +103,7 @@ services:
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana-dashboards/fygo-nas-overview.json
     volumes:
       - "${TRIM_PKGVAR}/grafana:/var/lib/grafana"
+      - "${TRIM_PKGVAR}/secrets:/etc/fygo-monitor-secrets:ro"
       - "${TRIM_APPDEST}/docker/grafana/provisioning:/etc/grafana/provisioning:ro"
       - "${TRIM_APPDEST}/docker/grafana/dashboards:/var/lib/grafana-dashboards:ro"
     networks: [monitor]

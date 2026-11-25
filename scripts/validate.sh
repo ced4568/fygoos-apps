@@ -49,12 +49,10 @@ validate_app() {
 
     echo "Compose file"
     if command -v docker >/dev/null; then
-        tmp=$(mktemp -d)
-        printf 'GF_SECURITY_ADMIN_PASSWORD=x\n' > "$tmp/grafana.env"
-        TRIM_SERVICE_PORT="$mport" TRIM_APPDEST="$PWD/app" TRIM_PKGVAR="$tmp" \
-        APP_UID=1000 APP_GID=1000 PROM_RETENTION=15d \
+        # Same as Fygo OS at install: only TRIM_* variables, and no file written by cmd/* exists yet.
+        TRIM_SERVICE_PORT="$mport" TRIM_APPDEST="$PWD/app" TRIM_PKGVAR=/nonexistent \
+        TRIM_UID=1000 TRIM_GID=1000 \
             docker compose -f app/docker/docker-compose.yaml config -q && ok "docker compose config" || bad "docker compose config"
-        rm -rf "$tmp"
     else
         echo "  skip  docker not installed"
     fi
