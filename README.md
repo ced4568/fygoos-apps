@@ -32,3 +32,11 @@ Create a new top-level folder with a `manifest`. The validate script and CI pick
 ## License
 
 MIT for the packaging in this repo. Each upstream component keeps its own license.
+
+## Get FygoOS
+
+FygoOS has a free tier, so you can try these apps without paying anything.
+
+If you go for Plus or Lifetime, code `9AATEV` gives 10% off: [fygonas.com/pricing](https://fygonas.com/pricing?ref=CHASESYNTHOSSYSTEMSCOM)
+
+**Affiliate disclosure:** that is an affiliate link. I earn a commission if you buy through it, at no extra cost to you.
