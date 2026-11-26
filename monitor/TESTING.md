@@ -133,8 +133,17 @@ Paths on this VM: `TRIM_APPDEST=/vol1/@appcenter/fygo-monitor`, `TRIM_PKGVAR=/vo
 | Wizard values at uninstall | Fygo OS also passes the stored install answers (`wizard_retention_days`, `wizard_container_metrics`, `wizard_grafana_password`) to the uninstall scripts. |
 | Clean install after a full delete (CLI) | Pass. New password accepted, `admin`/`admin` rejected, all three targets `up` with container metrics on. |
 
-### Still to test on the VM (all need the web UI)
+### 2026-11-26: upgrade and settings change (web UI)
 
-- [ ] Upgrade through Manual Install over the installed version.
-- [ ] A settings change through App Center, and whether Fygo OS restarts the app.
-- [ ] The Load panel fix and the ZFS panel as seen in Grafana.
+| Check | Result |
+|---|---|
+| Upgrade 0.1.0 to 0.1.4 through Manual Install, without uninstalling | Pass. App Center logged `class=upgrade`. Containers were re-created with the new package, all three targets `up`. |
+| Data across the upgrade | Kept. The oldest metric is from the 0.1.0 install; settings and the Grafana password are unchanged. |
+| Settings change in App Center (retention 15 to 30 days) | Saved: `settings.env` and the retention file both show 30. Password field left empty kept the password. |
+| Does Fygo OS restart the app after a settings change? | No. Prometheus kept running with 15d until the app was restarted, then showed 30d. The settings screen already tells the user to restart. |
+
+### Still open
+
+- [ ] Look at the "Load (1m) per core" and ZFS panels in Grafana (the queries behind both return data).
+- [ ] `appcenter-cli list` shows the app as `start`, not `running`, since the first reboot. Check what the web UI shows.
+- [ ] Signed build, once the developer certificate exists.

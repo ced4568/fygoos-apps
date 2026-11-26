@@ -67,8 +67,8 @@ Checked on Fygo OS 1.2.1010 on 2026-11-25. Details in [TESTING.md](TESTING.md).
 - [x] node-exporter and the other services come back after a NAS reboot.
 - [x] A storage pool mounted after install shows up without a restart.
 - [x] The ZFS metrics behind the ZFS panel have data once a pool exists (checked in Prometheus, panel not yet looked at).
-- [ ] The settings screen in App Center calls `config_callback` with the same `wizard_*` variables, and whether Fygo OS restarts the app afterwards.
-- [ ] Upgrade through Manual Install over an installed version (does it call `upgrade_callback` and re-create the containers?).
+- [x] The settings screen in App Center calls `config_callback` with the `wizard_*` variables and saves correctly. Fygo OS does not restart the app, so the change applies after a manual restart.
+- [x] Upgrade through Manual Install over an installed version re-creates the containers and keeps metrics, dashboards, settings and the password.
 - [x] Uninstall with "Delete them" selected removes metrics, dashboards and settings. The first version used a switch, which reached the script as `false` even when it was on; it is now a select with the values `keep` / `delete`.
 - [ ] Fygo OS review accepts the host access listed in [PERMISSIONS.md](PERMISSIONS.md).
 
