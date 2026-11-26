@@ -123,9 +123,18 @@ Paths on this VM: `TRIM_APPDEST=/vol1/@appcenter/fygo-monitor`, `TRIM_PKGVAR=/vo
 | Load (1m) per core panel | The installed dashboard now has the `scalar()` query. |
 | Fygo OS log during uninstall | `stop script error ... open /docker/docker-compose.yaml: no such file or directory`. Fygo OS builds that path with an empty app directory. The uninstall still succeeds and removes the containers and network. |
 
+### 2026-11-26: uninstall with data deletion, clean install
+
+| Check | Result |
+|---|---|
+| Old uninstall switch | Bug. Reached `uninstall_callback` as `wizard_delete_data=false` on every UI uninstall, including one where the user confirmed it was on. Replaced by a select, `wizard_data_action` with `keep` / `delete`. |
+| Uninstall with "Delete them" (web UI) | Pass. Both `uninstall_init` and `uninstall_callback` received `wizard_data_action=delete`. Metrics, Grafana data, settings and the password file are gone. |
+| What Fygo OS leaves behind | Empty `@appdata`, `@appconf`, `@apphome` and `@appmeta` folders for the app, and the `fygo-monitor` system user and group. Containers, network and images are removed. |
+| Wizard values at uninstall | Fygo OS also passes the stored install answers (`wizard_retention_days`, `wizard_container_metrics`, `wizard_grafana_password`) to the uninstall scripts. |
+| Clean install after a full delete (CLI) | Pass. New password accepted, `admin`/`admin` rejected, all three targets `up` with container metrics on. |
+
 ### Still to test on the VM (all need the web UI)
 
 - [ ] Upgrade through Manual Install over the installed version.
 - [ ] A settings change through App Center, and whether Fygo OS restarts the app.
-- [ ] Uninstall with "Delete them" selected. The old switch reached the script as `false` on all four UI uninstalls, including one where the user confirmed it was on. Now a select (`wizard_data_action`, `keep` / `delete`).
 - [ ] The Load panel fix and the ZFS panel as seen in Grafana.
