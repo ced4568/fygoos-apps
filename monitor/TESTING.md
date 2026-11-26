@@ -144,6 +144,8 @@ Paths on this VM: `TRIM_APPDEST=/vol1/@appcenter/fygo-monitor`, `TRIM_PKGVAR=/vo
 
 ### Still open
 
-- [ ] Look at the "Load (1m) per core" and ZFS panels in Grafana (the queries behind both return data).
+- [x] "Load (1m) per core" shows a value in Grafana (screenshot taken 2026-11-26).
+- [ ] The "Volume usage" panel showed an empty bar for `/fs`, a Fygo OS internal mount (`trimafs`). Now excluded in node-exporter; not yet verified on the VM.
+- [ ] Look at the ZFS panel in Grafana (the queries behind it return data).
 - [ ] `appcenter-cli list` shows the app as `start`, not `running`, since the first reboot. Check what the web UI shows.
 - [ ] Signed build, once the developer certificate exists.

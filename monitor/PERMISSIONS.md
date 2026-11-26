@@ -74,7 +74,7 @@ services:
       - --path.rootfs=/host
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
-      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|var/lib/containers/.+)($$|/)
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|fs|var/lib/docker/.+|var/lib/containers/.+)($$|/)
     volumes:
       - "/:/host:ro,rslave"
 
