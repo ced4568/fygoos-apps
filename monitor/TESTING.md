@@ -113,6 +113,16 @@ Paths on this VM: `TRIM_APPDEST=/vol1/@appcenter/fygo-monitor`, `TRIM_PKGVAR=/vo
 | node-exporter C: `/proc`, `/sys`, `/vol1` only | 1246 series; OS info lost, one filesystem error, one more failed collector |
 | App status after reboot | `appcenter-cli list` shows `start` instead of `running`, although everything is up and `cmd/main status` exits 0. Cosmetic so far; check what the web UI shows. |
 
+### 2026-11-26: fourth uninstall and reinstall (web UI)
+
+| Check | Result |
+|---|---|
+| Uninstall 0.1.2, install 0.1.3 | App Center log: uninstall 14:33, fresh install 14:34. Again not an upgrade. |
+| Data after the uninstall | Kept (oldest metric and the Grafana database date from the day before). Fourth UI uninstall that did not delete data. |
+| Password from the new wizard run | Works; the previous one is rejected. |
+| Load (1m) per core panel | The installed dashboard now has the `scalar()` query. |
+| Fygo OS log during uninstall | `stop script error ... open /docker/docker-compose.yaml: no such file or directory`. Fygo OS builds that path with an empty app directory. The uninstall still succeeds and removes the containers and network. |
+
 ### Still to test on the VM (all need the web UI)
 
 - [ ] Upgrade through Manual Install over the installed version.
