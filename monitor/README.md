@@ -35,7 +35,7 @@ Shared tooling lives at the repo root: `scripts/validate.sh` (local pre-flight c
 4. Each container reads its file when it starts. There is no `.env`: Fygo OS creates the containers before `install_callback` runs and never re-creates them on start or stop.
 5. Upgrades and config changes re-run `render_env`. A changed setting applies after the app is restarted from App Center.
 
-Metrics and Grafana data live in `$TRIM_PKGVAR`. Uninstall keeps them unless the user ticks "delete data".
+Metrics and Grafana data live in `$TRIM_PKGVAR`. Uninstall keeps them unless the user picks "Delete them" in the uninstall dialog.
 
 ## First session on the VM
 
@@ -69,7 +69,7 @@ Checked on Fygo OS 1.2.1010 on 2026-11-25. Details in [TESTING.md](TESTING.md).
 - [x] The ZFS metrics behind the ZFS panel have data once a pool exists (checked in Prometheus, panel not yet looked at).
 - [ ] The settings screen in App Center calls `config_callback` with the same `wizard_*` variables, and whether Fygo OS restarts the app afterwards.
 - [ ] Upgrade through Manual Install over an installed version (does it call `upgrade_callback` and re-create the containers?).
-- [ ] Uninstall with "delete data" on removes the data. Two UI uninstalls passed `wizard_delete_data=false`; not yet clear whether the switch was on.
+- [ ] Uninstall with "Delete them" selected removes the data. The first version used a switch; four UI uninstalls passed `wizard_delete_data=false`, at least one with the switch on. Replaced by a select with the values `keep` / `delete`.
 - [ ] Fygo OS review accepts the host access listed in [PERMISSIONS.md](PERMISSIONS.md).
 
 ## Roadmap

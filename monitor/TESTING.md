@@ -127,5 +127,5 @@ Paths on this VM: `TRIM_APPDEST=/vol1/@appcenter/fygo-monitor`, `TRIM_PKGVAR=/vo
 
 - [ ] Upgrade through Manual Install over the installed version.
 - [ ] A settings change through App Center, and whether Fygo OS restarts the app.
-- [ ] Uninstall with "delete data" on. Three UI uninstalls so far passed `wizard_delete_data=false`.
+- [ ] Uninstall with "Delete them" selected. The old switch reached the script as `false` on all four UI uninstalls, including one where the user confirmed it was on. Now a select (`wizard_data_action`, `keep` / `delete`).
 - [ ] The Load panel fix and the ZFS panel as seen in Grafana.

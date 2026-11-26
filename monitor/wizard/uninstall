@@ -3,10 +3,14 @@
     "stepTitle": "Uninstall",
     "items": [
       {
-        "type": "switch",
-        "field": "wizard_delete_data",
-        "label": "Also delete stored metrics and Grafana data",
-        "initValue": "false"
+        "type": "select",
+        "field": "wizard_data_action",
+        "label": "Stored metrics, dashboards and settings",
+        "initValue": "keep",
+        "options": [
+          { "label": "Keep them (a later reinstall picks them up)", "value": "keep" },
+          { "label": "Delete them", "value": "delete" }
+        ]
       }
     ]
   }

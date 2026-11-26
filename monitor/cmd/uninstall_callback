@@ -1,9 +1,11 @@
 #!/bin/bash
 # Respect the user's choice from wizard/uninstall. Default is to keep data.
-if [ "$wizard_delete_data" = "true" ]; then
+# A select with explicit values, not a switch: on Fygo OS 1.2.1010 the uninstall switch
+# reached this script as "false" even when the user had it on.
+# Fygo OS removes the containers and the network itself.
+if [ "$wizard_data_action" = "delete" ]; then
     rm -rf "${TRIM_PKGVAR:?}/prometheus" "${TRIM_PKGVAR:?}/grafana" \
         "${TRIM_PKGVAR:?}/settings" "${TRIM_PKGVAR:?}/secrets"
     rm -f "${TRIM_PKGETC:?}/settings.env"
 fi
-docker network rm fygo-monitor >/dev/null 2>&1 || true
 exit 0
